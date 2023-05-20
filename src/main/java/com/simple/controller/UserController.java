@@ -7,6 +7,7 @@ import com.simple.service.UserService;
 import com.simple.utils.ValidateCodeUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpSession;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/user")
@@ -21,6 +23,9 @@ import java.util.Map;
 public class UserController {
      @Autowired
      private UserService userService;
+
+     @Autowired
+     private RedisTemplate redisTemplate;
 
      //发送验证码
      @PostMapping("/sendMsg")
@@ -34,7 +39,11 @@ public class UserController {
                log.info("验证码："+code);
 
                //保存验证码
-               session.setAttribute(phone,code);
+//               session.setAttribute(phone,code);
+
+               //保存验证码到Redis中，有效期5分钟
+               redisTemplate.opsForValue().set(phone,code,5, TimeUnit.MINUTES);
+
                return R.success("手机验证码短信发送成功");
           }
           return R.error("手机短信发送失败");
@@ -50,7 +59,10 @@ public class UserController {
           String code = map.get("code").toString();
 
           //获取session中的验证码
-          Object codeInSession = session.getAttribute(phone);
+//          Object codeInSession = session.getAttribute(phone);
+
+          //从Redis中获取验证码
+          Object codeInSession = redisTemplate.opsForValue().get(phone);
 
           //如果验证码正确
           if (codeInSession!=null&&codeInSession.equals(code)){
@@ -64,6 +76,8 @@ public class UserController {
                }
                //将登录用户的id传入session，否则跳转页面时会被过滤器拦截
                session.setAttribute("user",user.getId());
+               //如果用户登录成功则删除Redis中缓存的验证
+               redisTemplate.delete(phone);
                return R.success(user);
           }
           return R.error("登陆失败");
